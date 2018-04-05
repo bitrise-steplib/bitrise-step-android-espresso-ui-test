@@ -1,0 +1,249 @@
+title: "Android Espresso UI Test"
+summary: Run Android Espresso UI tests on virtual devices
+description: Run Android Espresso UI tests on virtual devices
+website: https://github.com/bitrise-steplib/bitrise-step-android-espresso-ui-test
+source_code_url: https://github.com/bitrise-steplib/bitrise-step-android-espresso-ui-test
+support_url: https://github.com/bitrise-steplib/bitrise-step-android-espresso-ui-test/issues
+host_os_tags:
+  - ubuntu
+project_type_tags:
+  - android
+type_tags:
+  - test
+is_always_run: false
+is_skippable: false
+deps:
+  brew:
+  - name: go
+  apt_get:
+  - name: golang
+    bin_name: go
+toolkit:
+  go:
+    package_name: github.com/bitrise-steplib/bitrise-step-android-espresso-ui-test
+inputs:
+  - project_location: $BITRISE_SOURCE_DIR
+    opts:
+      title: Project Location
+      summary: "The root directory of your android project, e.g.: where your root build gradle file exist (also gradlew, settings.gradle, etc...)"
+      description: "The root directory of your android project, e.g.: where your root build gradle file exist (also gradlew, settings.gradle, etc...)"
+      is_required: true
+  - module: "app"
+    opts:
+      title: Module
+      summary: |
+        Set the module that you want to test. To see your available modules open your project in Android Studio and go in [Project Structure] and see the list on the left.
+      description: |
+        Set the module that you want to test. To see your available modules open your project in Android Studio and go in [Project Structure] and see the list on the left.
+      is_required: true
+  - variant: ""
+    opts:
+      title: Variant
+      summary: |
+        Set the variant that you want to test. To see your available variants open your project in Android Studio and go in [Project Structure] -> variants section.
+        
+        For example: entering `x86` variant will build assembleX86Debug and assembleX86DebugAndroidTest.
+      description: |
+        Set the variant that you want to test. To see your available variants open your project in Android Studio and go in [Project Structure] -> variants section.
+        
+        For example: entering `x86` variant will build assembleX86Debug and assembleX86DebugAndroidTest.
+      is_required: false
+  - test_devices: "NexusLowRes,24,en,portrait"
+    opts:
+      title: "Test devices"
+      description: |
+        Format:
+        One device configuration per line and the parameters are separated with `,` in the order of: `deviceID,version,language,orientation`
+        
+        For example:
+
+        `NexusLowRes,24,en,portrait`
+        
+        `NexusLowRes,24,en,landscape`
+        
+        Available devices and its versions:
+        ```
+        ┌─────────────┬──────────┬────────────────────┬─────────────┬────────────────┬
+        │   MODEL_ID  │   MAKE   │     MODEL_NAME     │  RESOLUTION │ OS_VERSION_IDS │
+        ├─────────────┼──────────┼────────────────────┼─────────────┼────────────────┼
+        │ Nexus4      │ LG       │ Nexus 4            │ 1280 x 768  │ 19,21,22       │
+        │ Nexus10     │ Samsung  │ Nexus 10           │ 2560 x 1600 │ 19,21,22       │
+        │ Nexus5      │ LG       │ Nexus 5            │ 1920 x 1080 │ 19,21,22,23    │
+        │ Nexus5X     │ LG       │ Nexus 5X           │ 1920 x 1080 │ 23,24,25,26    │
+        │ Nexus6      │ Motorola │ Nexus 6            │ 2560 x 1440 │ 21,22,23,24,25 │
+        │ Nexus6P     │ Google   │ Nexus 6P           │ 2560 x 1440 │ 23,24,25,26    │
+        │ Nexus7      │ ASUS     │ Nexus 7 (2012)     │ 1280 x 800  │ 19,21,22       │
+        │ Nexus9      │ HTC      │ Nexus 9            │ 2048 x 1536 │ 21,22,23,24,25 │
+        │ NexusLowRes │ Generic  │ Low-res MDPI phone │  640 x 360  │ 23,24,25,26    │
+        └─────────────┴──────────┴────────────────────┴─────────────┴────────────────┴
+        ```
+      summary: |
+        Format:
+        One device configuration per line and the parameters are separated with `,` in the order of: `deviceID,version,language,orientation`
+        
+        For example:
+
+        `NexusLowRes,24,en,portrait`
+        
+        `NexusLowRes,24,en,landscape`
+        
+        Available devices and its versions:
+        ```
+        ┌─────────────┬──────────┬────────────────────┬─────────────┬────────────────┬
+        │   MODEL_ID  │   MAKE   │     MODEL_NAME     │  RESOLUTION │ OS_VERSION_IDS │
+        ├─────────────┼──────────┼────────────────────┼─────────────┼────────────────┼
+        │ Nexus4      │ LG       │ Nexus 4            │ 1280 x 768  │ 19,21,22       │
+        │ Nexus10     │ Samsung  │ Nexus 10           │ 2560 x 1600 │ 19,21,22       │
+        │ Nexus5      │ LG       │ Nexus 5            │ 1920 x 1080 │ 19,21,22,23    │
+        │ Nexus5X     │ LG       │ Nexus 5X           │ 1920 x 1080 │ 23,24,25,26    │
+        │ Nexus6      │ Motorola │ Nexus 6            │ 2560 x 1440 │ 21,22,23,24,25 │
+        │ Nexus6P     │ Google   │ Nexus 6P           │ 2560 x 1440 │ 23,24,25,26    │
+        │ Nexus7      │ ASUS     │ Nexus 7 (2012)     │ 1280 x 800  │ 19,21,22       │
+        │ Nexus9      │ HTC      │ Nexus 9            │ 2048 x 1536 │ 21,22,23,24,25 │
+        │ NexusLowRes │ Generic  │ Low-res MDPI phone │  640 x 360  │ 23,24,25,26    │
+        └─────────────┴──────────┴────────────────────┴─────────────┴────────────────┴
+        ```
+      is_required: true
+  - app_package_id:
+    opts:
+      category: "Customization"
+      title: "App package ID"
+      summary: |
+        The Java package of the application under test (leave empty to get it extracted from the APK manifest).
+      description: |
+        The Java package of the application under test (leave empty to get it extracted from the APK manifest).
+  - test_package_id:
+    opts:
+      category: "Customization"
+      title: "Test package ID"
+      summary: The Java package name of the instrumentation test (leave empty to get it extracted from the APK manifest).
+      description: The Java package name of the instrumentation test (leave empty to get it extracted from the APK manifest).
+  - test_runner_class:
+    opts:
+      category: "Customization"
+      title: "Test runner class"
+      summary: The fully-qualified Java class name of the instrumentation test runner (leave empty to use the last name extracted from the APK manifest).
+      description: The fully-qualified Java class name of the instrumentation test runner (leave empty to use the last name extracted from the APK manifest).
+  - test_targets:
+    opts:
+      category: "Customization"
+      title: |
+        Test targets, seperated with the "," character.
+      summary: |
+        A list of one or more instrumentation test targets to be run (default: all targets). Each target must be fully qualified with the package name or class name, in one of these formats:
+
+        - `package package_name`
+        - `class package_name.class_name`
+        - `class package_name.class_name#method_name`
+
+        For example:
+
+        `class com.my.company.app.MyTargetClass,class com.my.company.app.MyOtherTargetClass`
+      description: |
+        A list of one or more instrumentation test targets to be run (default: all targets). Each target must be fully qualified with the package name or class name, in one of these formats:
+
+        - `package package_name`
+        - `class package_name.class_name`
+        - `class package_name.class_name#method_name`
+
+        For example:
+
+        `class com.my.company.app.MyTargetClass,class com.my.company.app.MyOtherTargetClass`
+  - use_orchestrator: "false"
+    opts:
+      category: "Customization"
+      title: "Use Orchestrator"
+      summary: |
+        The option of whether running each test within its own invocation of instrumentation with Android Test Orchestrator or not.
+      description: |
+        The option of whether running each test within its own invocation of instrumentation with Android Test Orchestrator or not.
+      value_options:
+        - "false"
+        - "true"
+  - test_timeout: 900
+    opts:
+      category: "Customization"
+      title: "Test timeout"
+      summary: |
+        The max time this test execution can run before it is cancelled. It does not include any time necessary to prepare and clean up the target device. The maximum possible testing time is 3600 seconds.
+      description: |
+        The max time this test execution can run before it is cancelled. It does not include any time necessary to prepare and clean up the target device. The maximum possible testing time is 3600 seconds.
+  - directories_to_pull:
+    opts:
+      category: "Customization"
+      title: "Directories to pull"
+      summary: |
+        A list of paths that will be downloaded from the device's storage after the test is complete. 
+        
+        For example
+        
+        ```
+        /sdcard/tempDir1
+        /data/tempDir2
+        ```
+      description: |
+        A list of paths that will be downloaded from the device's storage after the test is complete. 
+        
+        For example
+        
+        ```
+        /sdcard/tempDir1
+        /data/tempDir2
+        ```
+  - environment_variables:
+    opts:
+      category: "Customization"
+      title: Environment Variables
+      summary: |
+        One variable per line, key and value seperated by `=`
+
+        For example:
+
+        ```
+        coverage=true
+        coverageFile=/sdcard/tempDir/coverage.ec
+        ```
+      description: |
+        One variable per line, key and value seperated by `=`
+
+        For example:
+
+        ```
+        coverage=true
+        coverageFile=/sdcard/tempDir/coverage.ec
+        ```
+  - download_test_results: "false"
+    opts:
+      category: "Customization"
+      title: "Download files"
+      summary: |
+        Test result files like video or test cases results won't be downloaded. Use this input if you have set `directories_to_pull` input and you have files generated in the test.
+      description: |
+        Test result files like video or test cases results won't be downloaded. Use this input if you have set `directories_to_pull` input and you have files generated in the test.
+      value_options:
+        - "false"
+        - "true"
+  - api_base_url: $ADDON_VDTESTING_API_URL
+    opts:
+      category: "Customization"
+      title: "Test API's base URL"
+      summary: The URL where test API is accessible.
+      description: |
+        The URL where test API is accessible.
+      is_required: true
+      is_dont_change_value: true
+  - api_token: $ADDON_VDTESTING_API_TOKEN
+    opts: 
+      category: "Customization"
+      title: "API Token"
+      summary: The token required to authenticate with the API.
+      description: |
+        The token required to authenticate with the API.
+      is_required: true
+      is_dont_change_value: true
+outputs:
+  - VDTESTING_DOWNLOADED_FILES_DIR:
+    opts:
+      title: "Downloaded files directory"
+      description: "The directory containing the downloaded files if you have set `directories_to_pull` and `download_test_results` inputs above."
+      summary: "The directory containing the downloaded files if you have set `directories_to_pull` and `download_test_results` inputs above."

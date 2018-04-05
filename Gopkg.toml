@@ -1,0 +1,15 @@
+[[constraint]]
+  name = "github.com/bitrise-io/go-utils"
+  branch = "master"
+
+[[constraint]]
+  name = "github.com/bitrise-tools/go-steputils"
+  branch = "master"
+
+[[constraint]]
+  name = "google.golang.org/api"
+  branch = "master"
+
+[prune]
+  go-tests = true
+  unused-packages = true
