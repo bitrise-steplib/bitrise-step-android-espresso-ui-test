@@ -22,6 +22,7 @@ import (
 	"github.com/bitrise-io/go-utils/log"
 	"github.com/bitrise-io/go-utils/pathutil"
 	"github.com/bitrise-io/go-utils/sliceutil"
+	"github.com/bitrise-tools/go-android/gradle"
 	"github.com/bitrise-tools/go-steputils/input"
 	"github.com/bitrise-tools/go-steputils/stepconf"
 	"github.com/bitrise-tools/go-steputils/tools"
@@ -29,6 +30,11 @@ import (
 
 // Config ...
 type Config struct {
+	// gradle
+	ProjectLocation string `env:"project_location,dir"`
+	Variant         string `env:"variant"`
+	Module          string `env:"module,required"`
+
 	// api
 	APIBaseURL string `env:"api_base_url"`
 	BuildSlug  string `env:"BITRISE_BUILD_SLUG"`
@@ -58,6 +64,9 @@ type UploadURLRequest struct {
 
 func (c Config) print() {
 	log.Infof("Configs:")
+	log.Printf("- ProjectLocation: %s", c.ProjectLocation)
+	log.Printf("- Module: %s", c.Module)
+	log.Printf("- Variant: %s", c.Variant)
 	log.Printf("- TestTimeout: %s", c.TestTimeout)
 	log.Printf("- DirectoriesToPull: %s", c.DirectoriesToPull)
 	log.Printf("- EnvironmentVariables: %s", c.EnvironmentVariables)
@@ -79,7 +88,7 @@ func (c Config) print() {
 			continue
 		}
 
-		fmt.Fprintln(w, fmt.Sprintf("%s\t%s\t%s\t%s\t", deviceParams[0], deviceParams[1], deviceParams[3], deviceParams[2]))
+		fmt.Fprintln(w, fmt.Sprintf("%s\t%s\t%s\t%s\t", deviceParams[0], deviceParams[1], deviceParams[2], deviceParams[3]))
 	}
 	if err := w.Flush(); err != nil {
 		log.Errorf("Failed to flush writer, error: %s", err)
@@ -154,16 +163,15 @@ func uploadAPKs(c Config, appAPKPath, testAPKPath string) error {
 		return fmt.Errorf("failed to unmarshal response body, error: %s", err)
 	}
 
-	// TODO: implement builds first, then use those paths
-	// err = uploadFile(responseModel.AppURL, config.ApkPath)
-	// if err != nil {
-	// 	return fmt.Errorf("Failed to upload file(%s) to (%s), error: %s", config.ApkPath, responseModel.AppURL, err)
-	// }
+	err = uploadFile(responseModel.AppURL, appAPKPath)
+	if err != nil {
+		return fmt.Errorf("Failed to upload file(%s) to (%s), error: %s", appAPKPath, responseModel.AppURL, err)
+	}
 
-	// err = uploadFile(responseModel.TestAppURL, config.TestApkPath)
-	// if err != nil {
-	// 	return fmt.Errorf("Failed to upload file(%s) to (%s), error: %s", config.TestApkPath, responseModel.TestAppURL, err)
-	// }
+	err = uploadFile(responseModel.TestAppURL, testAPKPath)
+	if err != nil {
+		return fmt.Errorf("Failed to upload file(%s) to (%s), error: %s", testAPKPath, responseModel.TestAppURL, err)
+	}
 	return nil
 }
 
@@ -285,6 +293,196 @@ func startTest(c Config) error {
 	return nil
 }
 
+func waitForResults(c Config) error {
+	successful := true
+	finished := false
+	printedLogs := []string{}
+	for !finished {
+		url := c.APIBaseURL + "/" + c.AppSlug + "/" + c.BuildSlug + "/" + c.APIToken
+
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			failf("Failed to create http request, error: %s", err)
+		}
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if resp.StatusCode != http.StatusOK || err != nil {
+			resp, err = client.Do(req)
+			if err != nil {
+				failf("Failed to get http response, error: %s", err)
+			}
+		}
+
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			failf("Failed to read response body, error: %s", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			failf("Failed to get test status, error: %s", string(body))
+		}
+
+		responseModel := &toolresults.ListStepsResponse{}
+
+		err = json.Unmarshal(body, responseModel)
+		if err != nil {
+			failf("Failed to unmarshal response body, error: %s, body: %s", err, string(body))
+		}
+
+		finished = true
+		testsRunning := 0
+		for _, step := range responseModel.Steps {
+			if step.State != "complete" {
+				finished = false
+				testsRunning++
+			}
+		}
+
+		msg := ""
+		if len(responseModel.Steps) == 0 {
+			finished = false
+			msg = fmt.Sprintf("- Validating")
+		} else {
+			msg = fmt.Sprintf("- (%d/%d) running", testsRunning, len(responseModel.Steps))
+		}
+
+		if !sliceutil.IsStringInSlice(msg, printedLogs) {
+			log.Printf(msg)
+			printedLogs = append(printedLogs, msg)
+		}
+
+		if !finished {
+			time.Sleep(5 * time.Second)
+			continue
+		}
+
+		log.Donef("=> Test finished")
+		fmt.Println()
+
+		log.Infof("Test results:")
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+		fmt.Fprintln(w, "Model\tAPI Level\tLocale\tOrientation\tOutcome\t")
+
+		for _, step := range responseModel.Steps {
+			dimensions := map[string]string{}
+			for _, dimension := range step.DimensionValue {
+				dimensions[dimension.Key] = dimension.Value
+			}
+
+			outcome := step.Outcome.Summary
+
+			switch outcome {
+			case "success":
+				outcome = colorstring.Green(outcome)
+			case "failure":
+				successful = false
+				if step.Outcome.FailureDetail != nil {
+					if step.Outcome.FailureDetail.Crashed {
+						outcome += "(Crashed)"
+					}
+					if step.Outcome.FailureDetail.NotInstalled {
+						outcome += "(NotInstalled)"
+					}
+					if step.Outcome.FailureDetail.OtherNativeCrash {
+						outcome += "(OtherNativeCrash)"
+					}
+					if step.Outcome.FailureDetail.TimedOut {
+						outcome += "(TimedOut)"
+					}
+					if step.Outcome.FailureDetail.UnableToCrawl {
+						outcome += "(UnableToCrawl)"
+					}
+				}
+				outcome = colorstring.Red(outcome)
+			case "inconclusive":
+				successful = false
+				if step.Outcome.InconclusiveDetail != nil {
+					if step.Outcome.InconclusiveDetail.AbortedByUser {
+						outcome += "(AbortedByUser)"
+					}
+					if step.Outcome.InconclusiveDetail.InfrastructureFailure {
+						outcome += "(InfrastructureFailure)"
+					}
+				}
+				outcome = colorstring.Yellow(outcome)
+			case "skipped":
+				successful = false
+				if step.Outcome.SkippedDetail != nil {
+					if step.Outcome.SkippedDetail.IncompatibleAppVersion {
+						outcome += "(IncompatibleAppVersion)"
+					}
+					if step.Outcome.SkippedDetail.IncompatibleArchitecture {
+						outcome += "(IncompatibleArchitecture)"
+					}
+					if step.Outcome.SkippedDetail.IncompatibleDevice {
+						outcome += "(IncompatibleDevice)"
+					}
+				}
+				outcome = colorstring.Blue(outcome)
+			}
+
+			fmt.Fprintln(w, fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t", dimensions["Model"], dimensions["Version"], dimensions["Locale"], dimensions["Orientation"], outcome))
+		}
+		if err := w.Flush(); err != nil {
+			log.Errorf("Failed to flush writer, error: %s", err)
+		}
+	}
+
+	return map[bool]error{false: nil, true: fmt.Errorf("one or more test failed")}[!successful]
+}
+
+func downloadAssets(c Config) error {
+	url := c.APIBaseURL + "/assets/" + c.AppSlug + "/" + c.BuildSlug + "/" + c.APIToken
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		failf("Failed to create http request, error: %s", err)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		failf("Failed to get http response, error: %s", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		failf("Failed to get http response, status code: %d", resp.StatusCode)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		failf("Failed to read response body, error: %s", err)
+	}
+
+	responseModel := map[string]string{}
+
+	err = json.Unmarshal(body, &responseModel)
+	if err != nil {
+		failf("Failed to unmarshal response body, error: %s", err)
+	}
+
+	tempDir, err := pathutil.NormalizedOSTempDirPath("vdtesting_test_assets")
+	if err != nil {
+		failf("Failed to create temp dir, error: %s", err)
+	}
+
+	for fileName, fileURL := range responseModel {
+		err := downloadFile(fileURL, filepath.Join(tempDir, fileName))
+		if err != nil {
+			failf("Failed to download file, error: %s", err)
+		}
+	}
+
+	log.Donef("=> Assets downloaded")
+	if err := tools.ExportEnvironmentWithEnvman("VDTESTING_DOWNLOADED_FILES_DIR", tempDir); err != nil {
+		log.Warnf("Failed to export environment (VDTESTING_DOWNLOADED_FILES_DIR), error: %s", err)
+	} else {
+		log.Printf("The downloaded test assets path (%s) is exported to the VDTESTING_DOWNLOADED_FILES_DIR environment variable.", tempDir)
+	}
+	return nil
+}
+
 func main() {
 	var config Config
 
@@ -296,12 +494,136 @@ func main() {
 		failf("%s", err)
 	}
 
+	config.print()
 	fmt.Println()
 
-	successful := true
+	//////////////////////////////
+
+	gradleProject, err := gradle.NewProject(config.ProjectLocation)
+	if err != nil {
+		failf("Failed to open project, error: %s", err)
+	}
+
+	buildTask := gradleProject.
+		GetModule(config.Module).
+		GetTask("assemble")
+
+	log.Infof("Testable variants:")
+
+	variants, err := buildTask.GetVariants()
+	if err != nil {
+		failf("Failed to fetch variants, error: %s", err)
+	}
+
+	// get DebugAndroidTest ended tasks
+	testVariants := []string{}
+	for _, variant := range variants {
+		if strings.HasSuffix(variant, "DebugAndroidTest") {
+			testVariants = append(testVariants, variant)
+		}
+	}
+
+	// check non test tasks that has the same prefix as the test tasks and collect them as pairs
+	type match struct {
+		variant  string
+		appTask  string
+		testTask string
+	}
+	var matches []match
+	for _, variant := range variants {
+		for _, testVariant := range testVariants {
+			v := strings.TrimSuffix(testVariant, "DebugAndroidTest")
+			if variant == v+"Debug" {
+				matches = append(matches, match{v, variant, testVariant})
+			}
+		}
+	}
+
+	var selectedMatch match
+	if len(matches) == 1 && matches[0].variant == "" {
+		selectedMatch = matches[0]
+		log.Warnf("Your project configuration has no variants, ignoring Variant input...")
+	} else {
+		for _, match := range matches {
+			if config.Variant == match.variant {
+				log.Donef("✓ %s", match.variant)
+				selectedMatch = match
+			} else {
+				log.Printf("- %s", match.variant)
+			}
+		}
+	}
+
+	if selectedMatch.appTask == "" {
+		failf("The given variant: \"%s\" does not match any buildable variant from the list above.", config.Variant)
+	}
+
+	fmt.Println()
+
+	started := time.Now()
+
+	log.Infof("Build app APK:")
+	if err := buildTask.Run(gradle.Variants{selectedMatch.appTask}); err != nil {
+		failf("Build task failed, error: %v", err)
+	}
+	fmt.Println()
+
+	log.Infof("Find generated app APK:")
+
+	appDebugAPKPattern := "*.apk" //fmt.Sprintf("*.apk", config.Module)
+
+	appAPKs, err := gradleProject.FindArtifacts(started, appDebugAPKPattern, false)
+	if err != nil {
+		failf("failed to find apks, error: %v", err)
+	}
+
+	if len(appAPKs) == 0 {
+		failf("No APKs found with pattern: %s", appDebugAPKPattern)
+	}
+
+	if len(appAPKs) > 1 {
+		failf("Multiple APKs found, only one supported. (%v)", appAPKs)
+	}
+
+	log.Printf("- %s", appAPKs[0].Name)
+
+	fmt.Println()
+
+	started = time.Now()
+
+	log.Infof("Build test APK:")
+	if err = buildTask.Run(gradle.Variants{selectedMatch.testTask}); err != nil {
+		failf("Build task failed, error: %v", err)
+	}
+
+	fmt.Println()
+
+	log.Infof("Find generated test APK:")
+
+	testDebugAPKPattern := "*.apk" //fmt.Sprintf("*.apk", config.Module)
+
+	testAPKs, err := gradleProject.FindArtifacts(started, testDebugAPKPattern, false)
+	if err != nil {
+		failf("failed to find apks, error: %v", err)
+	}
+
+	if len(testAPKs) == 0 {
+		failf("No test apks found with pattern: %s", testDebugAPKPattern)
+	}
+
+	if len(testAPKs) > 1 {
+		failf("Multiple test APKs found, only one supported. (%v)", testAPKs)
+	}
+
+	log.Printf("- %s", testAPKs[0].Name)
+
+	//////////////////////////////
+
+	fmt.Println()
 
 	log.Infof("Upload APKs")
-	if err := uploadAPKs(config, "app", "test"); err != nil {
+	//TODO: print filenames here
+	if err := uploadAPKs(config, appAPKs[0].Path, testAPKs[0].Path); err != nil {
 		failf("Failed to upload APKs, error: %s", err)
 	}
 	log.Donef("=> APKs uploaded")
@@ -316,198 +638,16 @@ func main() {
 
 	fmt.Println()
 	log.Infof("Waiting for test results")
-	{
-		finished := false
-		printedLogs := []string{}
-		for !finished {
-			url := config.APIBaseURL + "/" + config.AppSlug + "/" + config.BuildSlug + "/" + config.APIToken
-
-			req, err := http.NewRequest("GET", url, nil)
-			if err != nil {
-				failf("Failed to create http request, error: %s", err)
-			}
-
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if resp.StatusCode != http.StatusOK || err != nil {
-				resp, err = client.Do(req)
-				if err != nil {
-					failf("Failed to get http response, error: %s", err)
-				}
-			}
-
-			body, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				failf("Failed to read response body, error: %s", err)
-			}
-
-			if resp.StatusCode != http.StatusOK {
-				failf("Failed to get test status, error: %s", string(body))
-			}
-
-			responseModel := &toolresults.ListStepsResponse{}
-
-			err = json.Unmarshal(body, responseModel)
-			if err != nil {
-				failf("Failed to unmarshal response body, error: %s, body: %s", err, string(body))
-			}
-
-			finished = true
-			testsRunning := 0
-			for _, step := range responseModel.Steps {
-				if step.State != "complete" {
-					finished = false
-					testsRunning++
-				}
-			}
-
-			msg := ""
-			if len(responseModel.Steps) == 0 {
-				finished = false
-				msg = fmt.Sprintf("- Validating")
-			} else {
-				msg = fmt.Sprintf("- (%d/%d) running", testsRunning, len(responseModel.Steps))
-			}
-
-			if !sliceutil.IsStringInSlice(msg, printedLogs) {
-				log.Printf(msg)
-				printedLogs = append(printedLogs, msg)
-			}
-
-			if finished {
-				log.Donef("=> Test finished")
-				fmt.Println()
-
-				log.Infof("Test results:")
-				w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-				fmt.Fprintln(w, "Model\tAPI Level\tLocale\tOrientation\tOutcome\t")
-
-				for _, step := range responseModel.Steps {
-					dimensions := map[string]string{}
-					for _, dimension := range step.DimensionValue {
-						dimensions[dimension.Key] = dimension.Value
-					}
-
-					outcome := step.Outcome.Summary
-
-					switch outcome {
-					case "success":
-						outcome = colorstring.Green(outcome)
-					case "failure":
-						successful = false
-						if step.Outcome.FailureDetail != nil {
-							if step.Outcome.FailureDetail.Crashed {
-								outcome += "(Crashed)"
-							}
-							if step.Outcome.FailureDetail.NotInstalled {
-								outcome += "(NotInstalled)"
-							}
-							if step.Outcome.FailureDetail.OtherNativeCrash {
-								outcome += "(OtherNativeCrash)"
-							}
-							if step.Outcome.FailureDetail.TimedOut {
-								outcome += "(TimedOut)"
-							}
-							if step.Outcome.FailureDetail.UnableToCrawl {
-								outcome += "(UnableToCrawl)"
-							}
-						}
-						outcome = colorstring.Red(outcome)
-					case "inconclusive":
-						successful = false
-						if step.Outcome.InconclusiveDetail != nil {
-							if step.Outcome.InconclusiveDetail.AbortedByUser {
-								outcome += "(AbortedByUser)"
-							}
-							if step.Outcome.InconclusiveDetail.InfrastructureFailure {
-								outcome += "(InfrastructureFailure)"
-							}
-						}
-						outcome = colorstring.Yellow(outcome)
-					case "skipped":
-						successful = false
-						if step.Outcome.SkippedDetail != nil {
-							if step.Outcome.SkippedDetail.IncompatibleAppVersion {
-								outcome += "(IncompatibleAppVersion)"
-							}
-							if step.Outcome.SkippedDetail.IncompatibleArchitecture {
-								outcome += "(IncompatibleArchitecture)"
-							}
-							if step.Outcome.SkippedDetail.IncompatibleDevice {
-								outcome += "(IncompatibleDevice)"
-							}
-						}
-						outcome = colorstring.Blue(outcome)
-					}
-
-					fmt.Fprintln(w, fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t", dimensions["Model"], dimensions["Version"], dimensions["Locale"], dimensions["Orientation"], outcome))
-				}
-				if err := w.Flush(); err != nil {
-					log.Errorf("Failed to flush writer, error: %s", err)
-				}
-			}
-			if !finished {
-				time.Sleep(5 * time.Second)
-			}
-		}
+	if err := waitForResults(config); err != nil {
+		failf("An issue encountered getting the test results, error: %s", err)
 	}
 
 	if config.DownloadTestResults == "true" {
 		fmt.Println()
 		log.Infof("Downloading test assets")
-		{
-			url := config.APIBaseURL + "/assets/" + config.AppSlug + "/" + config.BuildSlug + "/" + config.APIToken
-
-			req, err := http.NewRequest("GET", url, nil)
-			if err != nil {
-				failf("Failed to create http request, error: %s", err)
-			}
-
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil {
-				failf("Failed to get http response, error: %s", err)
-			}
-
-			if resp.StatusCode != http.StatusOK {
-				failf("Failed to get http response, status code: %d", resp.StatusCode)
-			}
-
-			body, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				failf("Failed to read response body, error: %s", err)
-			}
-
-			responseModel := map[string]string{}
-
-			err = json.Unmarshal(body, &responseModel)
-			if err != nil {
-				failf("Failed to unmarshal response body, error: %s", err)
-			}
-
-			tempDir, err := pathutil.NormalizedOSTempDirPath("vdtesting_test_assets")
-			if err != nil {
-				failf("Failed to create temp dir, error: %s", err)
-			}
-
-			for fileName, fileURL := range responseModel {
-				err := downloadFile(fileURL, filepath.Join(tempDir, fileName))
-				if err != nil {
-					failf("Failed to download file, error: %s", err)
-				}
-			}
-
-			log.Donef("=> Assets downloaded")
-			if err := tools.ExportEnvironmentWithEnvman("VDTESTING_DOWNLOADED_FILES_DIR", tempDir); err != nil {
-				log.Warnf("Failed to export environment (VDTESTING_DOWNLOADED_FILES_DIR), error: %s", err)
-			} else {
-				log.Printf("The downloaded test assets path (%s) is exported to the VDTESTING_DOWNLOADED_FILES_DIR environment variable.", tempDir)
-			}
+		if err := downloadAssets(config); err != nil {
+			failf("failed to download test assets, error: %s", err)
 		}
-	}
-
-	if !successful {
-		os.Exit(1)
 	}
 }
 
@@ -584,13 +724,13 @@ func uploadFile(uploadURL string, archiveFilePath string) error {
 		}
 	}()
 
-	_, err = ioutil.ReadAll(resp.Body)
+	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("Failed to read response: %s", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("Failed to upload file, response code was: %d", resp.StatusCode)
+		return fmt.Errorf("Failed to upload file, response code was: %d, body: %s", resp.StatusCode, string(b))
 	}
 
 	return nil

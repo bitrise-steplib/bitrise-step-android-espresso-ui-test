@@ -48,7 +48,7 @@ inputs:
         
         For example: entering `x86` variant will build assembleX86Debug and assembleX86DebugAndroidTest.
       is_required: false
-  - test_devices: "NexusLowRes,24,en,portrait"
+  - test_devices: "NexusLowRes,26,en,portrait"
     opts:
       title: "Test devices"
       description: |
