@@ -103,7 +103,7 @@ func (c Config) print() {
 
 func (c Config) validate() error {
 	if err := input.ValidateIfNotEmpty(c.APIBaseURL); err != nil {
-		if _, set := os.LookupEnv("BITRISE_IO"); !set {
+		if _, set := os.LookupEnv("BITRISE_IO"); set {
 			log.Warnf("Warning: please make sure that Virtual Device Testing add-on is turned on under your app's settings tab.")
 		}
 		return fmt.Errorf("Issue with APIBaseURL: %s", err)
