@@ -16,28 +16,28 @@ app:
 
 workflows:
   test:
-    # before_run:
-    # - go-tests
+    before_run:
+    - go-tests
     steps:
-    # - script:
-    #     inputs:
-    #     - content: |-
-    #         #!/bin/bash
-    #         rm -rf ./_tmp
+    - script:
+        inputs:
+        - content: |-
+            #!/bin/bash
+            rm -rf ./_tmp
     - change-workdir:
         title: cd ./_tmp
         inputs:
         - path: ./_tmp
         - is_create_path: true
-    # - script:
-    #     title: clone sample repo
-    #     inputs:
-    #     - content: |-
-    #         #!/bin/bash
-    #         git clone $SAMPLE_REPO_URL . #-b no-failures
-    # - install-missing-android-tools:
-    #     inputs:
-    #       - gradlew_path: ./gradlew
+    - script:
+        title: clone sample repo
+        inputs:
+        - content: |-
+            #!/bin/bash
+            git clone -b no-failures $SAMPLE_REPO_URL .
+    - install-missing-android-tools:
+        inputs:
+          - gradlew_path: ./gradlew
     - path::./:
         inputs:
           - api_base_url: $ADDON_VDTESTING_API_URL
