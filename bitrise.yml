@@ -38,11 +38,7 @@ workflows:
     - install-missing-android-tools:
         inputs:
           - gradlew_path: ./gradlew
-    - path::./:
-        inputs:
-          - api_base_url: $ADDON_VDTESTING_API_URL
-          - api_token: $ADDON_VDTESTING_API_TOKEN
-          - variant: DemoX86
+    - path::./: {}
 
   go-tests:
     steps:
@@ -114,7 +110,7 @@ workflows:
     envs:
       # if you want to share this step into a StepLib
       - MY_STEPLIB_REPO_FORK_GIT_URL: $MY_STEPLIB_REPO_FORK_GIT_URL
-      - STEP_ID_IN_STEPLIB: virtual-device-testing-for-android
+      - STEP_ID_IN_STEPLIB: android-espresso-ui-test
       - STEP_GIT_VERION_TAG_TO_SHARE: $STEP_VERSION
       - STEP_GIT_CLONE_URL: https://github.com/bitrise-steplib/bitrise-step-android-espresso-ui-test.git
     description: |-

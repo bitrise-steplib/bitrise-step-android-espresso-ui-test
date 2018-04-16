@@ -15,9 +15,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	testing "google.golang.org/api/testing/v1"
-	toolresults "google.golang.org/api/toolresults/v1beta3"
-
 	"github.com/bitrise-io/go-utils/colorstring"
 	"github.com/bitrise-io/go-utils/log"
 	"github.com/bitrise-io/go-utils/pathutil"
@@ -26,6 +23,8 @@ import (
 	"github.com/bitrise-tools/go-steputils/input"
 	"github.com/bitrise-tools/go-steputils/stepconf"
 	"github.com/bitrise-tools/go-steputils/tools"
+	testing "google.golang.org/api/testing/v1"
+	toolresults "google.golang.org/api/toolresults/v1beta3"
 )
 
 // Config ...
@@ -483,174 +482,6 @@ func downloadAssets(c Config) error {
 	return nil
 }
 
-func main() {
-	var config Config
-
-	if err := stepconf.Parse(&config); err != nil {
-		failf("Couldn't create config: %v\n", err)
-	}
-
-	if err := config.validate(); err != nil {
-		failf("%s", err)
-	}
-
-	config.print()
-	fmt.Println()
-
-	//////////////////////////////
-
-	gradleProject, err := gradle.NewProject(config.ProjectLocation)
-	if err != nil {
-		failf("Failed to open project, error: %s", err)
-	}
-
-	buildTask := gradleProject.
-		GetModule(config.Module).
-		GetTask("assemble")
-
-	log.Infof("Testable variants:")
-
-	variants, err := buildTask.GetVariants()
-	if err != nil {
-		failf("Failed to fetch variants, error: %s", err)
-	}
-
-	// get DebugAndroidTest ended tasks
-	testVariants := []string{}
-	for _, variant := range variants {
-		if strings.HasSuffix(variant, "DebugAndroidTest") {
-			testVariants = append(testVariants, variant)
-		}
-	}
-
-	// check non test tasks that has the same prefix as the test tasks and collect them as pairs
-	type match struct {
-		variant  string
-		appTask  string
-		testTask string
-	}
-	var matches []match
-	for _, variant := range variants {
-		for _, testVariant := range testVariants {
-			v := strings.TrimSuffix(testVariant, "DebugAndroidTest")
-			if variant == v+"Debug" {
-				matches = append(matches, match{v, variant, testVariant})
-			}
-		}
-	}
-
-	var selectedMatch match
-	if len(matches) == 1 && matches[0].variant == "" {
-		selectedMatch = matches[0]
-		log.Warnf("Your project configuration has no variants, ignoring Variant input...")
-	} else {
-		for _, match := range matches {
-			if config.Variant == match.variant {
-				log.Donef("✓ %s", match.variant)
-				selectedMatch = match
-			} else {
-				log.Printf("- %s", match.variant)
-			}
-		}
-	}
-
-	if selectedMatch.appTask == "" {
-		failf("The given variant: \"%s\" does not match any buildable variant from the list above.", config.Variant)
-	}
-
-	fmt.Println()
-
-	started := time.Now()
-
-	log.Infof("Build app APK:")
-	if err := buildTask.Run(gradle.Variants{selectedMatch.appTask}); err != nil {
-		failf("Build task failed, error: %v", err)
-	}
-	fmt.Println()
-
-	log.Infof("Find generated app APK:")
-
-	appDebugAPKPattern := "*.apk" //fmt.Sprintf("*.apk", config.Module)
-
-	appAPKs, err := gradleProject.FindArtifacts(started, appDebugAPKPattern, false)
-	if err != nil {
-		failf("failed to find apks, error: %v", err)
-	}
-
-	if len(appAPKs) == 0 {
-		failf("No APKs found with pattern: %s", appDebugAPKPattern)
-	}
-
-	if len(appAPKs) > 1 {
-		failf("Multiple APKs found, only one supported. (%v)", appAPKs)
-	}
-
-	log.Printf("- %s", appAPKs[0].Name)
-
-	fmt.Println()
-
-	started = time.Now()
-
-	log.Infof("Build test APK:")
-	if err = buildTask.Run(gradle.Variants{selectedMatch.testTask}); err != nil {
-		failf("Build task failed, error: %v", err)
-	}
-
-	fmt.Println()
-
-	log.Infof("Find generated test APK:")
-
-	testDebugAPKPattern := "*.apk" //fmt.Sprintf("*.apk", config.Module)
-
-	testAPKs, err := gradleProject.FindArtifacts(started, testDebugAPKPattern, false)
-	if err != nil {
-		failf("failed to find apks, error: %v", err)
-	}
-
-	if len(testAPKs) == 0 {
-		failf("No test apks found with pattern: %s", testDebugAPKPattern)
-	}
-
-	if len(testAPKs) > 1 {
-		failf("Multiple test APKs found, only one supported. (%v)", testAPKs)
-	}
-
-	log.Printf("- %s", testAPKs[0].Name)
-
-	//////////////////////////////
-
-	fmt.Println()
-
-	log.Infof("Upload APKs")
-	//TODO: print filenames here
-	if err := uploadAPKs(config, appAPKs[0].Path, testAPKs[0].Path); err != nil {
-		failf("Failed to upload APKs, error: %s", err)
-	}
-	log.Donef("=> APKs uploaded")
-
-	fmt.Println()
-
-	log.Infof("Start test")
-	if err := startTest(config); err != nil {
-		failf("Failed to start test, error: %s", err)
-	}
-	log.Donef("=> Test started")
-
-	fmt.Println()
-	log.Infof("Waiting for test results")
-	if err := waitForResults(config); err != nil {
-		failf("An issue encountered getting the test results, error: %s", err)
-	}
-
-	if config.DownloadTestResults == "true" {
-		fmt.Println()
-		log.Infof("Downloading test assets")
-		if err := downloadAssets(config); err != nil {
-			failf("failed to download test assets, error: %s", err)
-		}
-	}
-}
-
 func downloadFile(url string, localPath string) error {
 	out, err := os.Create(localPath)
 	if err != nil {
@@ -734,4 +565,169 @@ func uploadFile(uploadURL string, archiveFilePath string) error {
 	}
 
 	return nil
+}
+
+func main() {
+	var config Config
+
+	if err := stepconf.Parse(&config); err != nil {
+		failf("Couldn't create config: %v\n", err)
+	}
+
+	if err := config.validate(); err != nil {
+		failf("%s", err)
+	}
+
+	config.print()
+	fmt.Println()
+
+	gradleProject, err := gradle.NewProject(config.ProjectLocation)
+	if err != nil {
+		failf("Failed to open project, error: %s", err)
+	}
+
+	buildTask := gradleProject.
+		GetModule(config.Module).
+		GetTask("assemble")
+
+	log.Infof("Testable variants:")
+
+	variants, err := buildTask.GetVariants()
+	if err != nil {
+		failf("Failed to fetch variants, error: %s", err)
+	}
+
+	// get DebugAndroidTest ended tasks
+	testVariants := []string{}
+	for _, variant := range variants {
+		if strings.HasSuffix(variant, "DebugAndroidTest") {
+			testVariants = append(testVariants, variant)
+		}
+	}
+
+	// check non test tasks that has the same prefix as the test tasks and collect them as pairs
+	type match struct {
+		variant  string
+		appTask  string
+		testTask string
+	}
+	var matches []match
+	for _, variant := range variants {
+		for _, testVariant := range testVariants {
+			v := strings.TrimSuffix(testVariant, "DebugAndroidTest")
+			if variant == v+"Debug" {
+				matches = append(matches, match{v, variant, testVariant})
+			}
+		}
+	}
+
+	var selectedMatch match
+	if len(matches) == 1 && matches[0].variant == "" {
+		selectedMatch = matches[0]
+		log.Warnf("Your project configuration has no variants, ignoring Variant input...")
+	} else {
+		for _, match := range matches {
+			if config.Variant == match.variant {
+				log.Donef("✓ %s", match.variant)
+				selectedMatch = match
+			} else {
+				log.Printf("- %s", match.variant)
+			}
+		}
+	}
+
+	if selectedMatch.appTask == "" {
+		failf("The given variant: \"%s\" does not match any buildable variant from the list above.", config.Variant)
+	}
+
+	fmt.Println()
+
+	started := time.Now()
+
+	log.Infof("Build app APK:")
+	if err := buildTask.Run(gradle.Variants{selectedMatch.appTask}); err != nil {
+		failf("Build task failed, error: %v", err)
+	}
+	fmt.Println()
+
+	log.Infof("Find generated app APK:")
+
+	appDebugAPKPattern := "*.apk"
+
+	appAPKs, err := gradleProject.FindArtifacts(started, appDebugAPKPattern, false)
+	if err != nil {
+		failf("failed to find apks, error: %v", err)
+	}
+
+	if len(appAPKs) == 0 {
+		failf("No APKs found with pattern: %s", appDebugAPKPattern)
+	}
+
+	if len(appAPKs) > 1 {
+		failf("Multiple APKs found, only one supported. (%v)", appAPKs)
+	}
+
+	log.Printf("- %s", appAPKs[0].Name)
+
+	fmt.Println()
+
+	started = time.Now()
+
+	log.Infof("Build test APK:")
+	if err = buildTask.Run(gradle.Variants{selectedMatch.testTask}); err != nil {
+		failf("Build task failed, error: %v", err)
+	}
+
+	fmt.Println()
+
+	log.Infof("Find generated test APK:")
+
+	testDebugAPKPattern := "*.apk"
+
+	testAPKs, err := gradleProject.FindArtifacts(started, testDebugAPKPattern, false)
+	if err != nil {
+		failf("failed to find apks, error: %v", err)
+	}
+
+	if len(testAPKs) == 0 {
+		failf("No test apks found with pattern: %s", testDebugAPKPattern)
+	}
+
+	if len(testAPKs) > 1 {
+		failf("Multiple test APKs found, only one supported. (%v)", testAPKs)
+	}
+
+	log.Printf("- %s", testAPKs[0].Name)
+	fmt.Println()
+
+	log.Infof("Upload APKs")
+	log.Printf("- %s", appAPKs[0].Path)
+	log.Printf("- %s", testAPKs[0].Path)
+
+	if err := uploadAPKs(config, appAPKs[0].Path, testAPKs[0].Path); err != nil {
+		failf("Failed to upload APKs, error: %s", err)
+	}
+	log.Donef("=> APKs uploaded")
+
+	fmt.Println()
+
+	log.Infof("Start test")
+	if err := startTest(config); err != nil {
+		failf("Failed to start test, error: %s", err)
+	}
+	log.Donef("=> Test started")
+
+	fmt.Println()
+	log.Infof("Waiting for test results")
+	if err := waitForResults(config); err != nil {
+		failf("An issue encountered getting the test results, error: %s", err)
+	}
+
+	if config.DownloadTestResults == "true" {
+		fmt.Println()
+		log.Infof("Downloading test assets")
+		if err := downloadAssets(config); err != nil {
+			failf("failed to download test assets, error: %s", err)
+		}
+	}
 }
