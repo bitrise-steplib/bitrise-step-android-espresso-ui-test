@@ -19,29 +19,28 @@ workflows:
     before_run:
     - go-tests
     steps:
-    # - script:
-    #     inputs:
-    #     - content: |-
-    #         #!/bin/bash
-    #         rm -rf ./_tmp
+    - script:
+        inputs:
+        - content: |-
+            #!/bin/bash
+            rm -rf ./_tmp
     - change-workdir:
         title: cd ./_tmp
         inputs:
         - path: ./_tmp
         - is_create_path: true
-    # - script:
-    #     title: clone sample repo
-    #     inputs:
-    #     - content: |-
-    #         #!/bin/bash
-    #         git clone -b no-failures $SAMPLE_REPO_URL .
+    - script:
+        title: clone sample repo
+        inputs:
+        - content: |-
+            #!/bin/bash
+            git clone -b no-failures $SAMPLE_REPO_URL .
     - install-missing-android-tools:
         inputs:
           - gradlew_path: ./gradlew
     - path::./: 
         inputs:
           - module: app
-          - variant: MediumFckinsmall
 
   go-tests:
     steps:
