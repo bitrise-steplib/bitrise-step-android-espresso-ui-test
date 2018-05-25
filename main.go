@@ -19,6 +19,7 @@ import (
 	"github.com/bitrise-io/go-utils/log"
 	"github.com/bitrise-io/go-utils/pathutil"
 	"github.com/bitrise-io/go-utils/sliceutil"
+	"github.com/bitrise-io/go-utils/urlutil"
 	"github.com/bitrise-tools/go-android/gradle"
 	"github.com/bitrise-tools/go-steputils/input"
 	"github.com/bitrise-tools/go-steputils/stepconf"
@@ -35,13 +36,13 @@ type Config struct {
 	Module          string `env:"module,required"`
 
 	// api
-	APIBaseURL string `env:"api_base_url"`
-	BuildSlug  string `env:"BITRISE_BUILD_SLUG"`
-	AppSlug    string `env:"BITRISE_APP_SLUG"`
-	APIToken   string `env:"api_token"`
+	APIBaseURL string `env:"api_base_url,required"`
+	BuildSlug  string `env:"BITRISE_BUILD_SLUG,required"`
+	AppSlug    string `env:"BITRISE_APP_SLUG,required"`
+	APIToken   string `env:"api_token,required"`
 
 	// shared
-	TestDevices          string `env:"test_devices"`
+	TestDevices          string `env:"test_devices,required"`
 	AppPackageID         string `env:"app_package_id"`
 	TestTimeout          string `env:"test_timeout"`
 	DownloadTestResults  string `env:"download_test_results"`
@@ -72,7 +73,9 @@ func (c Config) print() {
 	log.Printf("- TestDevices:\n---")
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "Model\tAPI Level\tLocale\tOrientation\t")
+	if _, err := fmt.Fprintln(w, "Model\tAPI Level\tLocale\tOrientation\t"); err != nil {
+		failf("Failed to write to the writer, error: %s", err)
+	}
 	scanner := bufio.NewScanner(strings.NewReader(c.TestDevices))
 	for scanner.Scan() {
 		device := scanner.Text()
@@ -87,7 +90,9 @@ func (c Config) print() {
 			continue
 		}
 
-		fmt.Fprintln(w, fmt.Sprintf("%s\t%s\t%s\t%s\t", deviceParams[0], deviceParams[1], deviceParams[2], deviceParams[3]))
+		if _, err := fmt.Fprintln(w, fmt.Sprintf("%s\t%s\t%s\t%s\t", deviceParams[0], deviceParams[1], deviceParams[2], deviceParams[3])); err != nil {
+			failf("Failed to write to the writer, error: %s", err)
+		}
 	}
 	if err := w.Flush(); err != nil {
 		log.Errorf("Failed to flush writer, error: %s", err)
@@ -128,8 +133,11 @@ func failf(f string, v ...interface{}) {
 	os.Exit(1)
 }
 
-func uploadAPKs(c Config, appAPKPath, testAPKPath string) error {
-	url := c.APIBaseURL + "/assets/" + c.AppSlug + "/" + c.BuildSlug + "/" + c.APIToken
+func uploadAPKs(apiBaseURL, appSlug, buildSlug, apiToken, appAPKPath, testAPKPath string) error {
+	url, err := urlutil.Join(apiBaseURL, "assets", appSlug, buildSlug, apiToken)
+	if err != nil {
+		return fmt.Errorf("failed to join url, error: %s", err)
+	}
 
 	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
@@ -157,25 +165,25 @@ func uploadAPKs(c Config, appAPKPath, testAPKPath string) error {
 
 	responseModel := &UploadURLRequest{}
 
-	err = json.Unmarshal(body, responseModel)
-	if err != nil {
+	if err = json.Unmarshal(body, responseModel); err != nil {
 		return fmt.Errorf("failed to unmarshal response body, error: %s", err)
 	}
 
-	err = uploadFile(responseModel.AppURL, appAPKPath)
-	if err != nil {
+	if err = uploadFile(responseModel.AppURL, appAPKPath); err != nil {
 		return fmt.Errorf("Failed to upload file(%s) to (%s), error: %s", appAPKPath, responseModel.AppURL, err)
 	}
 
-	err = uploadFile(responseModel.TestAppURL, testAPKPath)
-	if err != nil {
+	if err = uploadFile(responseModel.TestAppURL, testAPKPath); err != nil {
 		return fmt.Errorf("Failed to upload file(%s) to (%s), error: %s", testAPKPath, responseModel.TestAppURL, err)
 	}
 	return nil
 }
 
 func startTest(c Config) error {
-	url := c.APIBaseURL + "/" + c.AppSlug + "/" + c.BuildSlug + "/" + c.APIToken
+	url, err := urlutil.Join(c.APIBaseURL, c.AppSlug, c.BuildSlug, c.APIToken)
+	if err != nil {
+		return fmt.Errorf("failed to join url, error: %s", err)
+	}
 
 	testModel := &testing.TestMatrix{}
 	testModel.EnvironmentMatrix = &testing.EnvironmentMatrix{AndroidDeviceList: &testing.AndroidDeviceList{}}
@@ -292,12 +300,15 @@ func startTest(c Config) error {
 	return nil
 }
 
-func waitForResults(c Config) error {
+func waitForResults(apiBaseURL, appSlug, buildSlug, apiToken string) error {
 	successful := true
 	finished := false
 	printedLogs := []string{}
 	for !finished {
-		url := c.APIBaseURL + "/" + c.AppSlug + "/" + c.BuildSlug + "/" + c.APIToken
+		url, err := urlutil.Join(apiBaseURL, appSlug, buildSlug, apiToken)
+		if err != nil {
+			return fmt.Errorf("failed to join url, error: %s", err)
+		}
 
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
@@ -324,8 +335,7 @@ func waitForResults(c Config) error {
 
 		responseModel := &toolresults.ListStepsResponse{}
 
-		err = json.Unmarshal(body, responseModel)
-		if err != nil {
+		if err = json.Unmarshal(body, responseModel); err != nil {
 			failf("Failed to unmarshal response body, error: %s, body: %s", err, string(body))
 		}
 
@@ -361,7 +371,9 @@ func waitForResults(c Config) error {
 
 		log.Infof("Test results:")
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(w, "Model\tAPI Level\tLocale\tOrientation\tOutcome\t")
+		if _, err := fmt.Fprintln(w, "Model\tAPI Level\tLocale\tOrientation\tOutcome\t"); err != nil {
+			failf("Failed to write to the writer, error: %s", err)
+		}
 
 		for _, step := range responseModel.Steps {
 			dimensions := map[string]string{}
@@ -421,55 +433,60 @@ func waitForResults(c Config) error {
 				outcome = colorstring.Blue(outcome)
 			}
 
-			fmt.Fprintln(w, fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t", dimensions["Model"], dimensions["Version"], dimensions["Locale"], dimensions["Orientation"], outcome))
+			if _, err := fmt.Fprintln(w, fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t", dimensions["Model"], dimensions["Version"], dimensions["Locale"], dimensions["Orientation"], outcome)); err != nil {
+				failf("Failed to write to the writer, error: %s", err)
+			}
 		}
 		if err := w.Flush(); err != nil {
 			log.Errorf("Failed to flush writer, error: %s", err)
 		}
 	}
-
-	return map[bool]error{false: nil, true: fmt.Errorf("one or more test failed")}[!successful]
+	if !successful {
+		return fmt.Errorf("one or more test failed")
+	}
+	return nil
 }
 
-func downloadAssets(c Config) error {
-	url := c.APIBaseURL + "/assets/" + c.AppSlug + "/" + c.BuildSlug + "/" + c.APIToken
+func downloadAssets(apiBaseURL, appSlug, buildSlug, apiToken string) error {
+	url, err := urlutil.Join(apiBaseURL, "assets", appSlug, buildSlug, apiToken)
+	if err != nil {
+		return fmt.Errorf("failed to join url, error: %s", err)
+	}
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		failf("Failed to create http request, error: %s", err)
+		return fmt.Errorf("Failed to create http request, error: %s", err)
 	}
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		failf("Failed to get http response, error: %s", err)
+		return fmt.Errorf("Failed to get http response, error: %s", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		failf("Failed to get http response, status code: %d", resp.StatusCode)
+		return fmt.Errorf("Failed to get http response, status code: %d", resp.StatusCode)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		failf("Failed to read response body, error: %s", err)
+		return fmt.Errorf("Failed to read response body, error: %s", err)
 	}
 
 	responseModel := map[string]string{}
 
-	err = json.Unmarshal(body, &responseModel)
-	if err != nil {
-		failf("Failed to unmarshal response body, error: %s", err)
+	if err = json.Unmarshal(body, &responseModel); err != nil {
+		return fmt.Errorf("Failed to unmarshal response body, error: %s", err)
 	}
 
 	tempDir, err := pathutil.NormalizedOSTempDirPath("vdtesting_test_assets")
 	if err != nil {
-		failf("Failed to create temp dir, error: %s", err)
+		return fmt.Errorf("Failed to create temp dir, error: %s", err)
 	}
 
 	for fileName, fileURL := range responseModel {
-		err := downloadFile(fileURL, filepath.Join(tempDir, fileName))
-		if err != nil {
-			failf("Failed to download file, error: %s", err)
+		if err := downloadFile(fileURL, filepath.Join(tempDir, fileName)); err != nil {
+			return fmt.Errorf("Failed to download file, error: %s", err)
 		}
 	}
 
@@ -507,8 +524,7 @@ func downloadFile(url string, localPath string) error {
 		return fmt.Errorf("Failed to download archive - non success response code: %d", resp.StatusCode)
 	}
 
-	_, err = io.Copy(out, resp.Body)
-	if err != nil {
+	if _, err := io.Copy(out, resp.Body); err != nil {
 		return fmt.Errorf("Failed to save cache content into file: %s", err)
 	}
 
@@ -586,15 +602,18 @@ func main() {
 		failf("Failed to open project, error: %s", err)
 	}
 
-	buildTask := gradleProject.
-		GetModule(config.Module).
-		GetTask("assemble")
+	buildTask := gradleProject.GetTask("assemble")
 
 	log.Infof("Testable variants:")
 
-	variants, err := buildTask.GetVariants()
+	variantsMap, err := buildTask.GetVariants()
 	if err != nil {
 		failf("Failed to fetch variants, error: %s", err)
+	}
+
+	variants, ok := variantsMap[config.Module]
+	if !ok {
+		failf("No module with name: %s found", config.Module)
 	}
 
 	// get DebugAndroidTest ended tasks
@@ -645,7 +664,7 @@ func main() {
 	started := time.Now()
 
 	log.Infof("Build app APK:")
-	if err := buildTask.Run(gradle.Variants{selectedMatch.appTask}); err != nil {
+	if err := buildTask.GetCommand(gradle.Variants{config.Module: []string{selectedMatch.appTask}}).Run(); err != nil {
 		failf("Build task failed, error: %v", err)
 	}
 	fmt.Println()
@@ -674,7 +693,7 @@ func main() {
 	started = time.Now()
 
 	log.Infof("Build test APK:")
-	if err = buildTask.Run(gradle.Variants{selectedMatch.testTask}); err != nil {
+	if err = buildTask.GetCommand(gradle.Variants{config.Module: []string{selectedMatch.testTask}}).Run(); err != nil {
 		failf("Build task failed, error: %v", err)
 	}
 
@@ -704,7 +723,7 @@ func main() {
 	log.Printf("- %s", appAPKs[0].Path)
 	log.Printf("- %s", testAPKs[0].Path)
 
-	if err := uploadAPKs(config, appAPKs[0].Path, testAPKs[0].Path); err != nil {
+	if err := uploadAPKs(config.APIBaseURL, config.AppSlug, config.BuildSlug, config.APIToken, appAPKs[0].Path, testAPKs[0].Path); err != nil {
 		failf("Failed to upload APKs, error: %s", err)
 	}
 	log.Donef("=> APKs uploaded")
@@ -719,14 +738,14 @@ func main() {
 
 	fmt.Println()
 	log.Infof("Waiting for test results")
-	if err := waitForResults(config); err != nil {
+	if err := waitForResults(config.APIBaseURL, config.AppSlug, config.BuildSlug, config.APIToken); err != nil {
 		failf("An issue encountered getting the test results, error: %s", err)
 	}
 
 	if config.DownloadTestResults == "true" {
 		fmt.Println()
 		log.Infof("Downloading test assets")
-		if err := downloadAssets(config); err != nil {
+		if err := downloadAssets(config.APIBaseURL, config.AppSlug, config.BuildSlug, config.APIToken); err != nil {
 			failf("failed to download test assets, error: %s", err)
 		}
 	}

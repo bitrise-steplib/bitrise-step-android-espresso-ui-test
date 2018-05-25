@@ -1,4 +1,4 @@
-// Package testing provides access to the Google Cloud Testing API.
+// Package testing provides access to the Cloud Testing API.
 //
 // See https://developers.google.com/cloud-test-lab/
 //
@@ -1051,7 +1051,9 @@ type Date struct {
 	// if specifying a year/month where the day is not significant.
 	Day int64 `json:"day,omitempty"`
 
-	// Month: Month of year. Must be from 1 to 12.
+	// Month: Month of year. Must be from 1 to 12, or 0 if specifying a date
+	// without a
+	// month.
 	Month int64 `json:"month,omitempty"`
 
 	// Year: Year of date. Must be from 1 to 9999, or 0 if specifying a date
@@ -2101,11 +2103,18 @@ type TestMatrix struct {
 	// allowed.
 	//   "TEST_ONLY_APK" - The APK is marked as "testOnly".
 	// NOT USED
+	//   "MALFORMED_IPA" - The input IPA could not be parsed.
+	// NOT USED
 	//   "NO_CODE_APK" - APK contains no code.
 	// See
 	// also
 	// https://developer.android.com/guide/topics/manifest/application-e
 	// lement.html#code
+	//   "INVALID_INPUT_APK" - Either the provided input APK path was
+	// malformed,
+	// the APK file does not exist, or the user does not have permission
+	// to
+	// access the APK file.
 	InvalidMatrixDetails string `json:"invalidMatrixDetails,omitempty"`
 
 	// ProjectId: The cloud project that owns the test matrix.

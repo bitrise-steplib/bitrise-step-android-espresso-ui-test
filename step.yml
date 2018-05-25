@@ -31,22 +31,14 @@ inputs:
   - module: "app"
     opts:
       title: Module
-      summary: |
-        Set the module that you want to test. To see your available modules open your project in Android Studio and go in [Project Structure] and see the list on the left.
-      description: |
-        Set the module that you want to test. To see your available modules open your project in Android Studio and go in [Project Structure] and see the list on the left.
+      summary: "Set the module that you want to test. To see your available modules open your project in Android Studio and go in [Project Structure] and see the list on the left."
+      description: "Set the module that you want to test. To see your available modules open your project in Android Studio and go in [Project Structure] and see the list on the left."
       is_required: true
   - variant: ""
     opts:
       title: Variant
-      summary: |
-        Set the variant that you want to test. To see your available variants open your project in Android Studio and go in [Project Structure] -> variants section.
-        
-        For example: entering `x86` variant will build assembleX86Debug and assembleX86DebugAndroidTest.
-      description: |
-        Set the variant that you want to test. To see your available variants open your project in Android Studio and go in [Project Structure] -> variants section.
-        
-        For example: entering `x86` variant will build assembleX86Debug and assembleX86DebugAndroidTest.
+      summary: "Set the variant that you want to test. To see your available variants open your project in Android Studio and go in [Project Structure] -> variants section."
+      description: "Set the variant that you want to test. To see your available variants open your project in Android Studio and go in [Project Structure] -> variants section."
       is_required: false
   - test_devices: "NexusLowRes,26,en,portrait"
     opts:

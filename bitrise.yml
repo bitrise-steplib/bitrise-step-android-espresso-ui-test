@@ -1,4 +1,4 @@
-format_version: 3
+format_version: 5
 default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
 
 app:
@@ -19,68 +19,36 @@ workflows:
     before_run:
     - go-tests
     steps:
-    - script:
-        inputs:
-        - content: |-
-            #!/bin/bash
-            rm -rf ./_tmp
+    # - script:
+    #     inputs:
+    #     - content: |-
+    #         #!/bin/bash
+    #         rm -rf ./_tmp
     - change-workdir:
         title: cd ./_tmp
         inputs:
         - path: ./_tmp
         - is_create_path: true
-    - script:
-        title: clone sample repo
-        inputs:
-        - content: |-
-            #!/bin/bash
-            git clone -b no-failures $SAMPLE_REPO_URL .
+    # - script:
+    #     title: clone sample repo
+    #     inputs:
+    #     - content: |-
+    #         #!/bin/bash
+    #         git clone -b no-failures $SAMPLE_REPO_URL .
     - install-missing-android-tools:
         inputs:
           - gradlew_path: ./gradlew
-    - path::./: {}
+    - path::./: 
+        inputs:
+          - module: app
+          - variant: MediumFckinsmall
 
   go-tests:
     steps:
-    - script:
-        title: Export go files to test
-        inputs:
-        - content: |-
-            #!/bin/bash
-            set -ex
-            no_vendor_paths="$(go list ./... | grep -v vendor)"
-            envman add --key GOLIST_WITHOUT_VENDOR --value "$no_vendor_paths"
-    - script:
-        title: Err check
-        inputs:
-        - content: |-
-            #!/bin/bash
-            set -ex
-            go get -u -v github.com/kisielk/errcheck
-            errcheck -asserts=true -blank=true $GOLIST_WITHOUT_VENDOR
-    - script:
-        title: Go lint
-        inputs:
-        - content: |-
-            #!/bin/bash
-            set -ex
-            go get -u -v github.com/golang/lint/golint
-            while read -r line; do
-              echo "-> Linting: $line"
-              golint_out="$(golint $line)"
-              if [[ "${golint_out}" != "" ]] ; then
-                echo "=> Golint issues found:"
-                echo "${golint_out}"
-                exit 1
-              fi
-            done <<< "$GOLIST_WITHOUT_VENDOR"
-    - script:
-        title: Go test
-        inputs:
-        - content: |-
-            #!/bin/bash
-            set -ex
-            go test $(go list ./... | grep -v /vendor/)
+    - go-list:
+    - golint:
+    - errcheck:
+    - go-test:
 
   # ----------------------------------------------------------------
   # --- workflows to Share this step into a Step Library

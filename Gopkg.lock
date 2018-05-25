@@ -13,15 +13,16 @@
     "pathutil",
     "pointers",
     "sliceutil",
+    "urlutil",
     "ziputil"
   ]
-  revision = "b33f6bcef9b50045d7e62364b354584afc3ee329"
+  revision = "d1de0dbcb811588e61362aff67bb700b93c13c17"
 
 [[projects]]
   branch = "master"
   name = "github.com/bitrise-tools/go-android"
   packages = ["gradle"]
-  revision = "5077c1324f3091ff73b44f4780ec1f27e9a3f1fe"
+  revision = "d76dcd0cbf2d6643f6b381751a20a153bcbfb55d"
 
 [[projects]]
   branch = "master"
@@ -46,7 +47,7 @@
     "context",
     "context/ctxhttp"
   ]
-  revision = "b3c676e531a6dc479fa1b35ac961c13f5e2b4d2e"
+  revision = "dfa909b99c79129e1100513e5cd36307665e5723"
 
 [[projects]]
   branch = "master"
@@ -58,11 +59,11 @@
     "testing/v1",
     "toolresults/v1beta3"
   ]
-  revision = "3097bf831ede4a24e08a3316254e29ca726383e3"
+  revision = "348810ff778af56686d572415ce79e6c9fad9613"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "2f68ca646ac118d00294cfe318a94f98e1278fc18c0ddff2f6889d59d2e7d2b1"
+  inputs-digest = "e7c8a1d3b9e109e72873fa873ffb5c5f23ea996f1f191fae44a0ab7bee11c35a"
   solver-name = "gps-cdcl"
   solver-version = 1
